@@ -1,122 +1,106 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'app.dart';
+import 'core/utils/clock.dart';
+import 'data/db/app_database.dart';
+import 'data/repositories/activity_repository.dart';
+import 'data/repositories/member_repository.dart';
+import 'data/repositories/project_repository.dart';
+import 'data/repositories/task_repository.dart';
+import 'state/activity_provider.dart';
+import 'state/member_provider.dart';
+import 'state/session_provider.dart';
+import 'state/settings_provider.dart';
+import 'state/task_provider.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Global error logging: framework errors and uncaught async/platform errors.
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Uncaught error: $error\n$stack');
+    return true;
+  };
+
+  // Open storage before the first frame: SQLite for relational data (created
+  // and seeded on first launch) and SharedPreferences for session + theme.
+  final prefs = await SharedPreferences.getInstance();
+  final db = await AppDatabase.open();
+
+  runApp(AppProviders.create(prefs: prefs, db: db).wrap(const OnTrackApp()));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+/// Wires repositories → providers once. Tests build the same graph on top of
+/// an in-memory database (optionally with a frozen [clock]).
+class AppProviders {
+  AppProviders._({
+    required this.session,
+    required this.members,
+    required this.tasks,
+    required this.activity,
+    required this.settings,
+  });
 
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+  factory AppProviders.create({
+    required SharedPreferences prefs,
+    required AppDatabase db,
+    Clock clock = systemClock,
+  }) {
+    final memberRepo = MemberRepository(db.db);
+    final taskRepo = TaskRepository(db.db, clock: clock);
+    final projectRepo = ProjectRepository(db.db);
+    final activityRepo = ActivityRepository(db.db);
+
+    final session = SessionProvider(prefs, memberRepo, clock: clock);
+    final members = MemberProvider(memberRepo, session, clock: clock);
+    final tasks = TaskProvider(
+      tasks: taskRepo,
+      projects: projectRepo,
+      session: session,
+      members: members,
+      clock: clock,
+    );
+    final activity = ActivityProvider(activityRepo, tasks);
+    final settings = SettingsProvider(prefs, db);
+
+    members.onTasksAffected = () => tasks.load(silent: true);
+    settings.onDataReset = () async {
+      await session.signOut();
+      await members.load();
+      await tasks.load();
+      await activity.load();
+    };
+
+    return AppProviders._(
+      session: session,
+      members: members,
+      tasks: tasks,
+      activity: activity,
+      settings: settings,
     );
   }
-}
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  final SessionProvider session;
+  final MemberProvider members;
+  final TaskProvider tasks;
+  final ActivityProvider activity;
+  final SettingsProvider settings;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
+  Widget wrap(Widget child) => MultiProvider(
+    providers: [
+      ChangeNotifierProvider<SessionProvider>.value(value: session),
+      ChangeNotifierProvider<MemberProvider>.value(value: members),
+      ChangeNotifierProvider<TaskProvider>.value(value: tasks),
+      ChangeNotifierProvider<ActivityProvider>.value(value: activity),
+      ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+    ],
+    child: child,
+  );
 }
