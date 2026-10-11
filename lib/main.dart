@@ -16,10 +16,13 @@ import 'state/session_provider.dart';
 import 'state/settings_provider.dart';
 import 'state/task_provider.dart';
 
+import 'database_factory_stub.dart'
+    if (dart.library.io) 'database_factory_io.dart'
+    if (dart.library.js_interop) 'database_factory_web.dart' as db_factory;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Global error logging: framework errors and uncaught async/platform errors.
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     debugPrint('FlutterError: ${details.exceptionAsString()}');
@@ -29,10 +32,12 @@ Future<void> main() async {
     return true;
   };
 
-  // Open storage before the first frame: SQLite for relational data (created
-  // and seeded on first launch) and SharedPreferences for session + theme.
+  db_factory.initializeDatabaseFactory();
+
   final prefs = await SharedPreferences.getInstance();
-  final db = await AppDatabase.open();
+  final db = await AppDatabase.open(
+    path: kIsWeb ? AppDatabase.fileName : null,
+  );
 
   runApp(AppProviders.create(prefs: prefs, db: db).wrap(const OnTrackApp()));
 }
