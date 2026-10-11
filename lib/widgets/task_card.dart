@@ -10,7 +10,7 @@ class SlaChip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-            color: sla.color.withOpacity(.12),
+            color: sla.color.withValues(alpha: .12),
             borderRadius: BorderRadius.circular(20)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(sla.icon, size: 14, color: sla.color),
@@ -70,7 +70,7 @@ class TaskCard extends StatelessWidget {
               Text(task.priority.name.toUpperCase(),
                   style: TextStyle(fontSize: 11, color: task.priorityColor)),
               const Spacer(),
-              Text(['To do', 'In progress', 'Done'][task.status.index],
+              Text(task.status.label,
                   style: TextStyle(fontSize: 12, color: grey)),
             ]),
           ]),
