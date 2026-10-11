@@ -160,5 +160,10 @@ Deadlines in the demo data are relative to the first launch. Use **Team → Rese
 - **Contribution tracker:** _link here_
 - **Demo video:** _link here_
 
+## AI Use Disclosure
+
+_Describe which parts of the project used AI assistance, how the generated code was reviewed, tested, and modified, and what each member learned from it._
+
+---
 
 *Built with Flutter for Formative Assignment 1.*
