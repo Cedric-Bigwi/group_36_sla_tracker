@@ -15,6 +15,10 @@ extension SlaStyle on Sla {
       ][index];
 }
 
+extension TaskStatusLabel on TaskStatus {
+  String get label => ['To do', 'In progress', 'Done'][index];
+}
+
 String fmt(DateTime d) {
   String p(int n) => n.toString().padLeft(2, '0');
   return '${p(d.day)}/${p(d.month)}/${d.year}  ${p(d.hour)}:${p(d.minute)}';
@@ -33,17 +37,24 @@ class Task {
     this.status = TaskStatus.todo, required this.deadline,
   });
 
+  /// Hours before the deadline when a task becomes At Risk.
+  static const int atRiskHours = 48;
+  static const int atRiskHoursHigh = 72; // High priority gets an earlier warning
+
   /// SLA RULES:
   /// 1. Done -> Completed
   /// 2. Deadline passed -> Overdue
-  /// 3. Due within 48h (72h if High priority) -> At Risk
+  /// 3. 48h or less left (72h if High priority) -> At Risk
   /// 4. Otherwise -> On Track
-  Sla get sla {
+  Sla get sla => slaAt(DateTime.now());
+
+  /// Same rules as [sla], checked against [now] so they can be unit-tested.
+  Sla slaAt(DateTime now) {
     if (status == TaskStatus.done) return Sla.completed;
-    final left = deadline.difference(DateTime.now());
+    final left = deadline.difference(now);
     if (left.isNegative) return Sla.overdue;
-    final limit = priority == Priority.high ? 72 : 48;
-    return left.inHours <= limit ? Sla.atRisk : Sla.onTrack;
+    final limit = priority == Priority.high ? atRiskHoursHigh : atRiskHours;
+    return left <= Duration(hours: limit) ? Sla.atRisk : Sla.onTrack;
   }
 
   Color get priorityColor =>
@@ -55,10 +66,17 @@ class Task {
         'status': status.index, 'deadline': deadline.toIso8601String(),
       };
 
+  /// Reads a saved task. Missing or invalid optional fields fall back to
+  /// defaults; id and deadline are required, so a task without them throws.
   factory Task.fromJson(Map<String, dynamic> j) => Task(
-        id: j['id'], title: j['title'], description: j['description'],
-        assignee: j['assignee'], team: j['team'], priority: Priority.values[j['priority']],
-        status: TaskStatus.values[j['status']],
+        id: j['id'], title: j['title'] ?? 'Untitled', description: j['description'] ?? '',
+        assignee: j['assignee'], team: j['team'] ?? '',
+        priority: _pick(Priority.values, j['priority'], Priority.medium),
+        status: _pick(TaskStatus.values, j['status'], TaskStatus.todo),
         deadline: DateTime.parse(j['deadline']),
       );
+
+  /// values[i] when i is a valid index, otherwise [fallback].
+  static T _pick<T>(List<T> values, dynamic i, T fallback) =>
+      i is int && i >= 0 && i < values.length ? values[i] : fallback;
 }
